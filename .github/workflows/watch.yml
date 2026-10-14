@@ -1,0 +1,41 @@
+name: Sporting tickets watch
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # every 5 min (GitHub's minimum; real runs are often 5-20 min apart)
+  workflow_dispatch:         # lets you run it manually from the Actions tab
+
+permissions:
+  contents: write            # needed to commit state.json back
+
+concurrency:
+  group: sporting-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check site
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_MENTION: ${{ vars.DISCORD_MENTION }}
+          MODALITIES: ${{ vars.MODALITIES }}
+        run: python watch.py
+
+      - name: Save state
+        run: |
+          if [ -n "$(git status --porcelain state.json)" ]; then
+            git config user.name  "sporting-watch-bot"
+            git config user.email "sporting-watch-bot@users.noreply.github.com"
+            git add state.json
+            git commit -m "update state"
+            git push
+          fi
