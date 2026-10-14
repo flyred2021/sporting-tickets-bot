@@ -6,7 +6,7 @@ on:
   workflow_dispatch:         # lets you run it manually from the Actions tab
 
 permissions:
-  contents: write            # needed to commit state.json back
+  contents: write            # only used by the monthly keepalive commit
 
 concurrency:
   group: sporting-watch
@@ -23,6 +23,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      # State lives in the Actions cache, not in the repo, so no site content is published.
+      - name: Restore state
+        uses: actions/cache/restore@v4
+        with:
+          path: state.json
+          key: sporting-state-${{ github.run_id }}
+          restore-keys: sporting-state-
+
       - name: Check site
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -31,11 +39,19 @@ jobs:
         run: python watch.py
 
       - name: Save state
+        if: always() && hashFiles('state.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: state.json
+          key: sporting-state-${{ github.run_id }}
+
+      # GitHub disables cron workflows after 60 days without commits in public repos.
+      - name: Keepalive
         run: |
-          if [ -n "$(git status --porcelain state.json)" ]; then
+          last=$(git log -1 --format=%ct)
+          if [ $(( $(date +%s) - last )) -gt $(( 45 * 86400 )) ]; then
             git config user.name  "sporting-watch-bot"
             git config user.email "sporting-watch-bot@users.noreply.github.com"
-            git add state.json
-            git commit -m "update state"
+            git commit --allow-empty -m "keepalive"
             git push
           fi
